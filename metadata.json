@@ -1,0 +1,8 @@
+{
+  "name": "Misi: Emotion-Aware Safety Assistant",
+  "description": "A real-time safety monitor with posture correction, fall detection, and voice assistance. It monitors notification logs and groups similar alerts using AI.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
