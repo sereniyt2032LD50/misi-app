@@ -6,37 +6,36 @@ Misi is built on a high-performance, real-time architecture that synchronizes mu
 
 ```mermaid
 graph TD
-    subgraph "Client Side (React 19)"
+    subgraph Client[Client Side - React 19]
         UI[Dashboard UI]
         Cam[Camera/Mic Capture]
         GLH[useGeminiLive Hook]
         PDF[jsPDF Engine]
     end
 
-    subgraph "Google Cloud AI"
-        Gemini[Gemini 2.5 Flash Native Audio]
+    subgraph AI[Google Cloud AI]
+        Gemini[Gemini 2.5 Flash]
         LiveAPI[Gemini Live WebSocket]
     end
 
-    subgraph "Backend (Express.js)"
+    subgraph Backend[Backend - Express.js]
         Srv[Node.js Server]
         OAuth[Google OAuth 2.0]
         CalAPI[Calendar API Proxy]
     end
 
-    subgraph "Persistence (Firebase)"
+    subgraph Persistence[Persistence - Firebase]
         Auth[Firebase Auth]
-        DB[(Firestore)]
-        Store[(Firebase Storage)]
+        DB[Firestore]
+        Store[Firebase Storage]
     end
 
-    %% Connections
     Cam --> GLH
-    GLH <-->|WebSocket / PCM Audio| LiveAPI
+    GLH <--> LiveAPI
     LiveAPI <--> Gemini
     
-    GLH -->|Tool Call: log_alert| DB
-    GLH -->|Tool Call: schedule_break| Srv
+    GLH --> DB
+    GLH --> Srv
     
     Srv <--> OAuth
     Srv <--> CalAPI
@@ -45,6 +44,39 @@ graph TD
     UI <--> DB
     PDF --> Store
     Store --> UI
+```
+
+### Fallback Diagram (ASCII)
+
+```text
++-----------------------------------------------------------------------+
+|                        CLIENT SIDE (React 19)                         |
+|  +--------------+      +------------------+      +-----------------+  |
+|  | Dashboard UI | <--> | useGeminiLive    | <--> | Camera/Mic      |  |
+|  +--------------+      | Hook             |      | Capture         |  |
+|         ^              +------------------+      +-----------------+  |
+|         |                      |                          |           |
++---------|----------------------|--------------------------|-----------+
+          |                      |                          |
+          v                      v                          |
++-------------------+    +--------------------------+       |
+|    PERSISTENCE    |    |     GOOGLE CLOUD AI      |       |
+|    (Firebase)     |    | (Gemini 2.5 Flash Audio) |       |
+|  +-------------+  |    |  +--------------------+  |       |
+|  | Firestore   | <-----|  | Gemini Live API    | <-------+
+|  +-------------+  |    |  | (WebSocket)        |  |
+|  +-------------+  |    |  +--------------------+  |
+|  | Storage     |  |    +--------------------------+
+|  +-------------+  |            ^
++---------^---------+            |
+          |                      v
+          |              +--------------------------+
+          |              |    BACKEND (Express)     |
+          |              |  +--------------------+  |
+          +--------------|  | Google Calendar    |  |
+                         |  | API Proxy          |  |
+                         |  +--------------------+  |
+                         +--------------------------+
 ```
 
 ## Data Flow Description
