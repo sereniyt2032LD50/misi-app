@@ -7,3 +7,21 @@ coverage/
 .env*
 !.env.example
 data/
+.venv
+
+# Terraform generated files and directories
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+# Crash log files
+crash.log
+firebase.ts
+
+
+terraform.tfvars
+
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

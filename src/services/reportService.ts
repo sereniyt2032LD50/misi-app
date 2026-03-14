@@ -16,11 +16,17 @@ import { jsPDF } from "jspdf";
 export async function generateAIReport(
   userId: string, 
   personalNote?: string, 
-  onStatusUpdate?: (status: string) => void,
+  onStatusUpdate?: (status: string, progress?: number) => void,
   onMarkdownUpdate?: (markdown: string) => void,
   signal?: AbortSignal
 ) {
-  const apiKey = process.env.GEMINI_API_KEY;
+  let apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    const res = await fetch('/api/config');
+    const config = await res.json();
+    apiKey = config.geminiApiKey;
+  }
+
   if (!apiKey) throw new Error("Gemini API Key is missing.");
 
   const checkSignal = () => {
@@ -29,7 +35,7 @@ export async function generateAIReport(
     }
   };
 
-  onStatusUpdate?.("Fetching session data...");
+  onStatusUpdate?.("Fetching session data...", 10);
   checkSignal();
 
   // 1. Fetch recent alerts for context
@@ -41,7 +47,7 @@ export async function generateAIReport(
   
   const alertsSnapshot = await getDocs(alertsQ);
   checkSignal();
-  onStatusUpdate?.("Analyzing postural patterns...");
+  onStatusUpdate?.("Analyzing postural patterns...", 20);
 
   const alerts = alertsSnapshot.docs.map(doc => doc.data());
   
@@ -56,9 +62,12 @@ export async function generateAIReport(
   // 2. Generate AI Analysis in Markdown
   const ai = new GoogleGenAI({ apiKey });
   const prompt = `
-    Generate a professional postural health report in MARKDOWN format based on the following session data and specific medical guidelines:
+    Generate a professional postural analysis report in plain text format based on the following session data and specific guidelines.
+    DO NOT use markdown symbols like #, *, or -. Use clear spacing and ALL CAPS for section headers.
     
-    MEDICAL GUIDELINES & INSTRUCTIONS:
+    CURRENT DATE: ${new Date().toLocaleDateString()}
+
+    GUIDELINES & INSTRUCTIONS:
     ${REPORT_GENERATION_INSTRUCTIONS}
 
     SESSION ALERTS:
@@ -67,12 +76,12 @@ export async function generateAIReport(
     ${personalNote ? `USER PERSONAL NOTE: ${personalNote}` : ''}
     
     Please structure the report with:
-    # EXECUTIVE SUMMARY: Overall postural health assessment.
-    ## OBSERVABLE SIGNS: Analysis of forward head posture, rounded shoulders, pelvic tilt, etc., based on the provided guidelines.
-    ## ACTIONABLE DATA: Position change frequency, static hold durations, and asymmetry risks.
-    ## RECOMMENDATIONS: Specific ergonomic advice and tips on how to setup an ergonomic workstation.
+    EXECUTIVE SUMMARY: Overall postural assessment. Start by explicitly stating the current date.
+    OBSERVABLE SIGNS: Analysis of forward head posture, rounded shoulders, pelvic tilt, etc., based on the provided guidelines.
+    ACTIONABLE DATA: Position change frequency, static hold durations, and asymmetry risks.
+    RECOMMENDATIONS: Specific ergonomic advice and tips on how to setup an ergonomic workstation.
     
-    Keep the tone professional, medical-grade, and actionable.
+    Keep the tone professional and actionable. Note: This is an analysis report, not a medical health report.
   `;
 
   let streamResponse;
@@ -87,14 +96,17 @@ export async function generateAIReport(
   }
 
   let markdownContent = "";
+  let streamProgress = 20;
   for await (const chunk of streamResponse) {
     checkSignal();
     const text = chunk.text || "";
     markdownContent += text;
+    streamProgress = Math.min(80, streamProgress + 2);
+    onStatusUpdate?.("Generating insights...", Math.floor(streamProgress));
     onMarkdownUpdate?.(markdownContent);
   }
 
-  onStatusUpdate?.("Finalizing report document...");
+  onStatusUpdate?.("Finalizing report document...", 85);
   
   // 3. Create PDF version
   const doc = new jsPDF();
@@ -104,7 +116,7 @@ export async function generateAIReport(
   
   doc.setFontSize(18);
   doc.setTextColor(0, 128, 128); // Emerald-ish
-  doc.text("MISI SYSTEMS - POSTURAL HEALTH REPORT", margin, 20);
+  doc.text("Misi App - POSTURAL ANALYSIS REPORT", margin, 20);
   
   doc.setFontSize(10);
   doc.setTextColor(100);
@@ -122,20 +134,14 @@ export async function generateAIReport(
       y = 20;
     }
 
-    if (line.startsWith('# ')) {
-      doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      const text = line.replace('# ', '');
-      doc.text(text, margin, y);
-      y += 10;
-    } else if (line.startsWith('## ')) {
+    if (line.trim() === '') {
+      y += 5;
+    } else if (line === line.toUpperCase() && line.length > 3 && !line.includes('http')) {
+      // Treat ALL CAPS lines as headers
       doc.setFontSize(12);
       doc.setFont("helvetica", "bold");
-      const text = line.replace('## ', '');
-      doc.text(text, margin, y);
+      doc.text(line, margin, y);
       y += 8;
-    } else if (line.trim() === '') {
-      y += 5;
     } else {
       doc.setFontSize(11);
       doc.setFont("helvetica", "normal");
@@ -152,7 +158,8 @@ export async function generateAIReport(
     }
   });
   
-  const pdfBlob = doc.output('blob');
+  const pdfArrayBuffer = doc.output('arraybuffer');
+  const pdfBlob = new Blob([pdfArrayBuffer], { type: 'application/pdf' });
   
   // 4. Upload PDF to Storage
   const reportId = Math.random().toString(36).substring(7);
@@ -162,9 +169,9 @@ export async function generateAIReport(
   
   let downloadURL = "";
   try {
-    await uploadBytes(storageRef, pdfBlob);
+    await uploadBytes(storageRef, pdfBlob, { contentType: 'application/pdf' });
     checkSignal();
-    onStatusUpdate?.("Saving to dashboard...");
+    onStatusUpdate?.("Saving to dashboard...", 95);
     downloadURL = await getDownloadURL(storageRef);
   } catch (uploadError) {
     console.warn("Failed to upload PDF to storage. The report will be saved without a PDF link.", uploadError);
@@ -182,5 +189,6 @@ export async function generateAIReport(
     type: 'pdf'
   });
 
+  onStatusUpdate?.("Report Ready", 100);
   return { id: docRef.id, name: reportName, downloadURL };
 }

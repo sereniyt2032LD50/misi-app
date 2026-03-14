@@ -9,8 +9,9 @@ terraform {
 }
 
 provider "google" {
-  project = var.project_id
-  region  = var.region
+  project     = var.project_id
+  region      = var.region
+  credentials = file("../terraform-service-account.json")
 }
 
 # Enable required APIs
@@ -35,17 +36,16 @@ resource "google_artifact_registry_repository" "repo" {
   format        = "DOCKER"
 }
 
-# Service Account for Cloud Run
-resource "google_service_account" "run_sa" {
+# Service Account for Cloud Run (Using existing)
+data "google_service_account" "run_sa" {
   account_id   = "misi-runner"
-  display_name = "Misi Cloud Run Service Account"
 }
 
 # Grant Vertex AI access to the service account
 resource "google_project_iam_member" "vertex_ai_user" {
   project = var.project_id
   role    = "roles/aiplatform.user"
-  member  = "serviceAccount:${google_service_account.run_sa.email}"
+  member  = "serviceAccount:${data.google_service_account.run_sa.email}"
 }
 
 # Cloud Run Service
@@ -55,9 +55,11 @@ resource "google_cloud_run_v2_service" "misi" {
   ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
-    service_account = google_service_account.run_sa.email
+    service_account = data.google_service_account.run_sa.email
     containers {
-      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.repo.repository_id}/misi:latest"
+      # Use a placeholder image for initial deployment. 
+      # The actual image will be deployed via gcloud later.
+      image = "us-docker.pkg.dev/cloudrun/container/hello"
       
       ports {
         container_port = 3000
@@ -75,22 +77,34 @@ resource "google_cloud_run_v2_service" "misi" {
         name  = "GCP_LOCATION"
         value = var.region
       }
-      # Secrets should ideally be pulled from Secret Manager
-      # This is a placeholder for environment variables
       env {
         name  = "APP_URL"
         value = var.app_url
       }
+      env {
+        name  = "GEMINI_API_KEY"
+        value = var.gemini_api_key
+      }
+      env {
+        name  = "GOOGLE_CLIENT_ID"
+        value = var.google_client_id
+      }
+      env {
+        name  = "GOOGLE_CLIENT_SECRET"
+        value = var.google_client_secret
+      }
+      env {
+        name  = "SESSION_SECRET"
+        value = var.session_secret
+      }
     }
   }
 
-  depends_on = [google_project_service.services]
-}
+  lifecycle {
+    ignore_changes = [
+      template[0].containers[0].image
+    ]
+  }
 
-# Allow public access (optional, based on your needs)
-resource "google_cloud_run_v2_service_iam_member" "public_access" {
-  location = google_cloud_run_v2_service.misi.location
-  name     = google_cloud_run_v2_service.misi.name
-  role     = "roles/run.invoker"
-  member   = "allUsers"
+  depends_on = [google_project_service.services]
 }
