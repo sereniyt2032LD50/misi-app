@@ -17,7 +17,8 @@ data/
 # Crash log files
 crash.log
 firebase.ts
-
+devpost-gemini-challenge-9c913d9f1bc6.json
+terraform-service-account.json
 
 terraform.tfvars
 
